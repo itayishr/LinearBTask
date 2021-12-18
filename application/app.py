@@ -110,6 +110,5 @@ def currency():
 
 
 if __name__ == '__main__':
-    # db.create_all()
     db.init_app(app)
     app.run(debug=True)
