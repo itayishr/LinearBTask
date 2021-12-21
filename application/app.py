@@ -1,5 +1,3 @@
-import sys
-import traceback
 from math import ceil
 
 from flask import Flask, request, render_template, jsonify
@@ -8,28 +6,31 @@ from forex_python.converter import CurrencyRates
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///atm-db'
 
-from models import AtmEntry, db
+from models import Atm, db, Currencies
 
 
 @app.before_first_request
 def seed_table():
-    AtmEntry.query.delete()
-    new_entries = [AtmEntry("BILL", 200, 7),
-                   AtmEntry("BILL", 100, 4),
-                   AtmEntry("BILL", 20, 1),
-                   AtmEntry("COIN", 10, 1),
-                   AtmEntry("COIN", 5, 1),
-                   AtmEntry("COIN", 1, 10),
-                   AtmEntry("COIN", 0.1, 12),
-                   AtmEntry("COIN", 0.01, 50)]
-    new_entries = [AtmEntry("BILL", 200, 0),
-                   AtmEntry("BILL", 100, 0),
-                   AtmEntry("BILL", 20, 0),
-                   AtmEntry("COIN", 10, 0),
-                   AtmEntry("COIN", 5, 0),
-                   AtmEntry("COIN", 1, 0),
-                   AtmEntry("COIN", 0.1, 0),
-                   AtmEntry("COIN", 0.01, 50)]
+    Atm.query.delete()
+    # new_entries = [Atm("BILL", 200, 7),
+    #                Atm("BILL", 100, 4),
+    #                Atm("BILL", 20, 1),
+    #                Atm("COIN", 10, 1),
+    #                Atm("COIN", 5, 1),
+    #                Atm("COIN", 1, 10),
+    #                Atm("COIN", 0.1, 12),
+    #                Atm("COIN", 0.01, 50)]
+    currency = Currencies("ILS")
+    db.session.add(currency)
+    db.session.commit()
+    new_entries = [Atm("BILL", 200, 0),
+                   Atm("BILL", 100, 0),
+                   Atm("BILL", 20, 0),
+                   Atm("COIN", 10, 0),
+                   Atm("COIN", 5, 0),
+                   Atm("COIN", 1, 0),
+                   Atm("COIN", 0.1, 0),
+                   Atm("COIN", 0.01, 50)]
     for new_entry in new_entries:
         db.session.add(new_entry)
         db.session.commit()
@@ -50,7 +51,7 @@ def withdraw():
             if div_result <= money[key]["amount"]:
                 amount_to_withdraw = round(amount_to_withdraw - div_result * key, 2)
                 money[key]["amount"] = money[key]["amount"] - div_result
-                money_to_update = AtmEntry.query.filter_by(value=key).first()
+                money_to_update = Atm.query.filter_by(value=key).first()
                 setattr(money_to_update, "amount", money[key]["amount"])
                 db.session.commit()
                 if money[key]["type"] == "BILL":
@@ -80,24 +81,26 @@ def withdraw():
     3. If feasible, subtract bills from inventory and update DB
     4. Send back result to user
     """
-    # currency = request.args.get("type")
+    currency = request.args.get("currency")
     amount = request.args.get("amount")
-    exchange_rate = 1
     if currency and amount:
+        currency_entry = Currencies.query.filter_by(value=currency)
+        if currency_entry is None:
+            return "No such currency in ATM", 400
         amount_tmp = round(float(amount), 2)
         # Check if currency exists in ATM
-        entries = AtmEntry.query.all()
+        atm_entries = Atm.query.all()
         money = dict()
         bills = dict()
         coins = dict()
-        if entries is None:
+        if atm_entries is None:
             return "ATM Empty, please try again later.", 400
-        for entry in entries:
+        for entry in atm_entries:
             money[entry.value] = {"type": entry.type, "amount": entry.amount}
         try:
             result = calculate_change(money, amount_tmp)
         except TooMuchCoinsException as e:
-            return jsonify({'TooMuchCoinsException':str(e)})
+            return jsonify({'TooMuchCoinsException': str(e)})
         if result is None:
             return "Insufficient change for withdrawal", 400
         else:
@@ -106,7 +109,12 @@ def withdraw():
 
 @app.route('/admin/currency', methods=['POST'])
 def currency():
-    return
+    currency_to_add = request.args.get("currency")
+    currency_entry = Currencies.query.filter_by(value=currency_to_add)
+    if currency_entry is None:
+        new_currency = Currencies(currency_to_add)
+        db.add(new_currency)
+        db.session.commit()
 
 
 if __name__ == '__main__':
